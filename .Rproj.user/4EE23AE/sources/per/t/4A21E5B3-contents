@@ -1,0 +1,363 @@
+---
+title: "Phytofloat Perle Summary"
+author: "Flavien"
+date: "14/06/2021"
+output: html_document
+---
+
+In 2017 Mathieu Rembauville published a new method leading to an estimation of the percentage of the contribution of differents phytoplankton size classses to the total carbon concentration from optical parameters. This method is based on Partial Least Square model training which require accurate data of both carbon contribution and optical data. The method was initally published with a training set sampled in the austral ocean. The sampling protocole, named "Phytofloat", was conducted during 3 differents cruises in the Eastern Mediterranean sea. This summary try to understand the potentiallity to replicate previous results in this region. 
+
+# Part 1 : Dataset exploration ####
+
+We gathered data from Perle 0, Perle 1 and Perle 2, that took place in the eastern Mediterranean sea, in 2018 and 2019. 
+```{r include=FALSE}
+library(tidyverse)
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE,  fig.align="center", fig.width=7, fig.height=5, fig.cap="Figure: Map of the PERLE cruises"}
+stations <- read_csv("Data/Perle/pf_stations.csv") 
+world_map <- map_data("world")
+
+ggplot(stations)+
+  geom_point(aes(x = longitude, y = latitude, colour = cruise))+
+  geom_polygon(aes(x = long, y = lat, group = group), data = world_map)+
+  coord_quickmap(xlim = c(7,35), ylim = c(30,45))+
+  xlab("Longitude °E")+
+  ylab("Latitude °N")+
+  theme_bw()
+```
+
+In total, 60 samples have been collected. However, due to a disfunctioning RemA sensor during Perle1, the number of samples have been reduce to 42.<br>
+
+The sampled region is caracterized by oligotrophic waters, with a relatively low seasonal dynamic.<br>
+The figure above show the proportion of each class to the total carbon concentration. It is clear that the community is significantly dominate by bacterial and picophytoplankton biomass. We notice a low variation in micro and nanophytolpankton contribution.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE,  fig.align="center", fig.width=8, fig.height=4, fig.cap="Figure: Carbon concentration distribution by phytoplankton size classes"}
+pf_perle <- read_csv("Data/Perle/Output/training_set.csv")
+
+sample_plot <- select(pf_perle, sample_id, micro_carbon, nano_carbon, pico_carbon, bact_carbon) %>% 
+  pivot_longer(micro_carbon:bact_carbon, names_to = "class", values_to = "carbon") %>% 
+  mutate(cruise = substr(sample_id, 1, 2))
+
+ggplot(sample_plot)+
+  geom_col(aes(x = sample_id, y = carbon, fill = class), position = "fill")+
+  theme_bw()+
+  scale_fill_brewer(palette = "Set1", name = "") + 
+  facet_wrap(.~cruise, scale= 'free_x')+
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  xlab("sample")+
+  ylab("%Cgroup")
+```
+Those observations are coherent with the litterature as we can see on  a similar figure published by VArkitzi in 2020. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE,  fig.align="center", fig.asp=0.30, fig.width=6, fig.height=6, fig.cap="Figure: Size distributon of Chl-a ine the North Aegan, South Aegan, Levantine and Inian seas in spring and summer. (Varkitzi et al. 2020)"}
+library(png)
+library(grid)
+img <- readPNG("Data/Perle/community.png")
+grid.raster(img)
+```
+
+<br>
+The linear correlation between the %Cgroup and the descriptors has been investigated. Microphytoplankton and nanophytoplankton are not sgnificantly correlatid to predictors. Picophytoplankton and bacterial are correlated to depth, chl and bbp in opposite ways. Bacteria are positively correlated to depth and negatively to chlorophyll and bbp. This can be explained to an increase proportion of bacteria due to  a diminituion of total biomass in depth. It is the opposite trend that is observed for picophytoplankton. 
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE,  fig.align="center", fig.width=7, fig.height=5, fig.cap="Figure: Correlation coefficient between predictors and response variables. Significativ correlations (p.value < 0.01) have been marked with a circle"}
+library(reshape2)
+pf_dataset <- pf_perle %>% mutate(ctot = micro_carbon + nano_carbon + pico_carbon + bact_carbon,
+                                  micro_p = micro_carbon/ctot,
+                                  nano_p = nano_carbon/ctot,
+                                  pico_p = pico_carbon/ctot,
+                                  bact_p = bact_carbon/ctot) %>%
+  select(micro_p, nano_p, pico_p, bact_p, pressure, temp, salinity, chl, bbp, cp, cdm, chl_bbp) %>% na.omit()
+
+
+dataset_corr <- pf_dataset %>% 
+  mutate(bbp = (bbp - mean(bbp))/sd(bbp),
+         chl = (chl - mean(chl))/sd(chl),
+         salinity = (salinity - mean(salinity))/sd(salinity),
+         temp = (temp - mean(temp))/sd(temp),
+         pressure = (pressure - mean(pressure))/sd(pressure),
+         cdm = (cdm - mean(cdm))/sd(cdm),
+         chl_bbp = chl/bbp,
+         micro_p = (micro_p - mean(micro_p))/sd(micro_p),
+         nano_p = (nano_p - mean(nano_p))/sd(nano_p),
+         pico_p = (pico_p - mean(pico_p))/sd(pico_p),
+         bact_p = (bact_p - mean(bact_p))/sd(bact_p)
+         ) %>% 
+  select(-cp)
+
+cormat <- round(cor(dataset_corr), 2)
+
+get_upper_tri <- function(cormat){
+  cormat[lower.tri(cormat)]<- NA
+  return(cormat)
+}
+
+upper_tri <- get_upper_tri(cormat)
+
+melted_cormat <- melt(upper_tri, na.rm = TRUE) %>% mutate(Var1 = as.character(Var1),
+                                                          Var2 = as.character(Var2)) %>%
+  filter(Var2 %in% c("chl_bbp", "pressure", "chl", "bbp", "cdm", "salinity", "temp") &
+                                                            Var1 %in% c("micro_p", "nano_p", "pico_p", "bact_p"))
+
+library(Hmisc)
+
+pval <- rcorr(as.matrix(dataset_corr))
+pval <- pval[[3]]
+
+melted_pval <- melt(pval, na.rm = TRUE) %>% mutate(Var1 = as.character(Var1),
+                                                   Var2 = as.character(Var2)) %>%
+  filter(Var2 %in% c("chl_bbp", "pressure", "chl", "bbp", "cdm", "salinity", "temp") &
+           Var1 %in% c("micro_p", "nano_p", "pico_p", "bact_p"))
+
+signif_corr <- filter(melted_pval, value < 0.01)
+ggplot(melted_cormat)+
+  geom_tile(aes(x = Var1, y = Var2, fill = value))+
+  scale_fill_distiller(palette = "RdBu", limits = c(-1, 1), name = "")+
+  geom_point(aes(x = Var1, y = Var2), pch = 21, fill = NA, size = 4, data = signif_corr)+
+  xlab("")+
+  ylab("")+
+  theme_bw()
+
+```
+
+The variation of the contribution of micro and nanophytoplankton may not be sufficiently important to be significantly correlated to predictors variables. 
+
+# Prediction model ####
+
+A PLS model have been train with the whole dataset in order to investigate the variation of response variables that can be explained. 
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE,  fig.align="center", fig.width=7, fig.height=5, fig.cap="Figure: Contribution of each plankton group to Ctot as predicted by the PLSR compared to the observations"}
+library(tidymodels)
+library(pls)
+
+result_final <- data.frame("type" = character(),
+                           "size" = character(),
+                           "pred" = numeric(),
+                           "real" = numeric())
+
+
+  
+x <- as.matrix(select(pf_dataset, pressure:chl_bbp))
+y_full <- as.matrix(select(pf_dataset, pico_p, bact_p, micro_p, nano_p))
+  
+
+y_test <- select(pf_dataset, pico_p, bact_p, micro_p, nano_p)
+
+pls_format <- data.frame(
+    endpoints = I(y_full),
+    measurements = I(x)
+  )
+  # Fit the model
+mod <- plsr(endpoints ~ measurements, data = pls_format, ncomp = 6)
+  
+  #predict on test set
+  
+pred <- predict(mod, x)
+  
+pred <- data.frame(pred[,,6]) %>% mutate("type" = "pred") %>% pivot_longer(pico_p:nano_p, names_to = "size", values_to = "pred")
+actual <- y_test %>% pivot_longer(pico_p:nano_p, names_to = "size", values_to = "real")
+
+result <- bind_cols(pred, select(actual, -size))
+
+
+ggplot(result)+
+  geom_smooth(aes(x = real, y = pred), method ="lm", se = FALSE)+
+  geom_point(aes(x = real, y = pred, colour = size))+
+  scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                labels = trans_format("log10", math_format(10^.x))) +
+  scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                labels = trans_format("log10", math_format(10^.x))) +
+  annotation_logticks() +
+  xlab("Observed %C_tot")+
+  ylab("Predict %C_tot")+
+  theme_bw()
+```
+
+The models reconstruct a good variation of the total contribution of the different size classes. We look closer by looking at the %age of variation explaine for each contribution.
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE,  fig.align="center", fig.width=7, fig.height=5, fig.cap="Figure: %age of explained variance for each size class"}
+
+norm_data <- recipe(micro_p + nano_p + pico_p + bact_p ~ ., data = pf_dataset) %>% step_normalize(everything())
+
+
+folds <- vfold_cv(pf_dataset, repeats = 10)
+
+folds <- 
+  folds %>%
+  mutate(recipes = map(splits, prepper, recipe = norm_data))
+
+
+get_var_explained <- function(recipe, ...) {
+  
+  # Extract the predictors and outcomes into their own matrices
+  y_mat <- bake(recipe, new_data = NULL, composition = "matrix", all_outcomes())
+  x_mat <- bake(recipe, new_data = NULL, composition = "matrix", all_predictors())
+  
+  # The pls package prefers the data in a data frame where the outcome
+  # and predictors are in _matrices_. To make sure this is formatted
+  # properly, use the `I()` function to inhibit `data.frame()` from making
+  # all the individual columns. `pls_format` should have two columns.
+  pls_format <- data.frame(
+    endpoints = I(y_mat),
+    measurements = I(x_mat)
+  )
+  # Fit the model
+  mod <- plsr(endpoints ~ measurements, data = pls_format)
+  
+  # Get the proportion of the predictor variance that is explained
+  # by the model for different number of components. 
+  xve <- explvar(mod)/100 
+  
+  # To do the same for the outcome, it is more complex. This code 
+  # was extracted from pls:::summary.mvr. 
+  explained <- 
+    drop(pls::R2(mod, estimate = "train", intercept = FALSE)$val) %>% 
+    # transpose so that components are in rows
+    t() %>% 
+    as_tibble() %>%
+    # Add the predictor proportions
+    mutate(predictors = cumsum(xve) %>% as.vector(),
+           components = seq_along(xve)) %>%
+    # Put into a tidy format that is tall
+    pivot_longer(
+      cols = c(-components),
+      names_to = "source",
+      values_to = "proportion"
+    )
+}
+
+folds <- 
+  folds %>%
+  mutate(var = map(recipes, get_var_explained),
+         var = unname(var))
+
+variance_data <- 
+  bind_rows(folds[["var"]]) %>%
+  filter(components <= 8) %>%
+  group_by(components, source) %>%
+  summarise(proportion = mean(proportion))
+
+ggplot(variance_data, aes(x = components, y = proportion, col = source)) + 
+  geom_line() + 
+  geom_point() +
+  scale_colour_brewer(palette = "Set1", name = "")+
+  ylab("% explained")+
+  xlab("Number of components")+
+  theme_bw()
+```
+<br>
+A bootstrap technique (100 rep with 2/3 learnin and 1/3 testing) was used to quantify the correlation between estimate and observed C%group. The results are shown in this table.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+result <- data.frame("Size class" = c("Bact",
+                                      "Pico",
+                                      "Nano",
+                                      "Micro"),
+                     "Rsq" = c(0.51,
+                               0.63,
+                               0.43,
+                               0.10))
+
+print(result)
+```
+
+# Prediction on floats data ####
+
+Three floats have been selected for prediction of %Cgroup. 
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE,  fig.align="center", fig.width=7, fig.height=5, fig.cap="Figure: Map of the floats profiles"}
+
+bgc_data <- read_csv("Data/Perle/Output/bgc_perle.csv") %>% rename("pressure" = pres, "salinity" = psal, "chl" = chla_adjusted, "bbp" = bbp700) %>% mutate(wmo = as.character(wmo))
+
+bgc_point <- select(bgc_data, wmo, lon, lat) %>% distinct()
+bgc_predict_data <- bgc_data %>% filter(lon > 20 & pressure < 200) %>% select("pressure", temp, "salinity", "chl", "bbp") %>% 
+  mutate(chl_bbp = chl/bbp)
+
+ggplot(bgc_point)+
+  geom_point(aes(x = lon, y = lat, colour = wmo))+
+  geom_polygon(aes(x = long, y = lat, group = group), data = world_map)+
+  coord_quickmap(xlim = c(7,35), ylim = c(30,45))+
+  xlab("Longitude °E")+
+  ylab("Latitude °N")+
+  theme_bw()
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE,  fig.align="center", fig.width=8, fig.height=5, fig.cap="Figure: Carbon contribution of picophytoplankton"}
+pf_dataset <- pf_perle %>% mutate(ctot = micro_carbon + nano_carbon + pico_carbon + bact_carbon,
+                                  micro_p = micro_carbon/ctot,
+                                  nano_p = nano_carbon/ctot,
+                                  pico_p = pico_carbon/ctot,
+                                  bact_p = bact_carbon/ctot,
+                                  chl = chl/2,
+                                  bbp = bbp) %>%
+  select(micro_p, nano_p, pico_p, bact_p, pressure, temp, salinity, chl, bbp, chl_bbp) %>% na.omit()
+
+bgc_clean <- bgc_predict_data 
+
+x <- as.matrix(select(pf_dataset, pressure:chl_bbp))
+y_full <- as.matrix(select(pf_dataset, pico_p, bact_p, micro_p, nano_p))
+
+
+bgc_predict_clean <- as.matrix(bgc_clean)
+
+pls_format <- data.frame(
+  endpoints = I(y_full),
+  measurements = I(x)
+)
+
+mod <- plsr(endpoints ~ measurements, data = pls_format, ncomp = 6)
+
+predict_bgc <- data.frame(predict(mod, bgc_predict_clean)) %>% select(ends_with("6.comps"))
+
+names(predict_bgc) <- c("pico_p", "bact_p", "micro_p", "nano_p")
+
+bgc_full <- bind_cols(bgc_clean, predict_bgc)
+
+bgc_full <- left_join(bgc_data, bgc_full) %>% na.omit()
+
+ggplot(filter(bgc_full, pico_p <= 1))+
+  geom_point(aes(x = date, y = -pressure, colour = pico_p))+
+  scale_colour_viridis_c()+
+  facet_wrap(.~wmo, scale = "free_x")
+
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE,  fig.align="center", fig.width=8, fig.height=5, fig.cap="Figure: Carbon contribution of bacteria"}
+ggplot(filter(bgc_full, bact_p >= 0))+
+  geom_point(aes(x = date, y = -pressure, colour = bact_p))+
+  scale_colour_viridis_c()+
+  facet_wrap(.~wmo, scale = "free_x")
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE,  fig.align="center", fig.width=8, fig.height=5, fig.cap="Figure: Carbon contribution of nanophytoplankton"}
+ggplot(filter(bgc_full, nano_p >= 0))+
+  geom_point(aes(x = date, y = -pressure, colour = nano_p))+
+  scale_colour_viridis_c()+
+  facet_wrap(.~wmo, scale = "free_x")
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE,  fig.align="center", fig.width=8, fig.height=5, fig.cap="Figure: Carbon contribution of microphytoplankton"}
+ggplot(filter(bgc_full, micro_p >= 0))+
+  geom_point(aes(x = date, y = -pressure, colour = micro_p))+
+  scale_colour_viridis_c()+
+  facet_wrap(.~wmo, scale = "free_x")
+```
+
+
+
+Is it due to bbp ?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE,  fig.align="center", fig.width=8, fig.height=5, fig.cap="Figure: Distribution of BBP and CHL values"}
+test <- filter(bgc_full, pico_p <= 1) %>% mutate(type = "coherent") %>% select(bbp, chl, temp, type)
+test_nok <- filter(bgc_full, pico_p >= 1) %>% mutate(type = "outlier") %>% select(bbp, chl, temp, type)
+ref <- pf_dataset %>% mutate(type = "ref") %>% select(bbp, chl, temp, type)
+
+explore <- bind_rows(test, test_nok, ref)
+
+ggplot(explore)+
+  geom_boxplot(aes(y = bbp, x = type))+
+  ylim(0,0.0025)
+
+ggplot(explore)+
+  geom_boxplot(aes(y = chl, x = type))
+
+```
+

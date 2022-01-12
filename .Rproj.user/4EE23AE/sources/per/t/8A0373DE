@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1631029679103.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "710044891",
+    "id" : "8A0373DE",
+    "lastKnownWriteTime" : 1624977926,
+    "last_content_update" : 1634293186767,
+    "path" : "~/Documents/these/efficacy/labo_roscoff/summary_analysis.Rmd",
+    "project_path" : "summary_analysis.Rmd",
+    "properties" : {
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

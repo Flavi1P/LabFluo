@@ -1,0 +1,27 @@
+{
+    "id": "70D0DEB6",
+    "path": "~/these/efficacy/labo_roscoff/projet_3x1m/spectro.R",
+    "project_path": "projet_3x1m/spectro.R",
+    "type": "r_source",
+    "hash": "3200923588",
+    "contents": "",
+    "dirty": false,
+    "created": 1614110002800.0,
+    "source_on_save": false,
+    "relative_order": 6,
+    "properties": {
+        "tempName": "Untitled1",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "56,32",
+        "scrollLine": "0"
+    },
+    "folds": "4|31|12|0|\n17|33|46|0|\n",
+    "lastKnownWriteTime": 1614121215,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1614121218353,
+    "read_only": false,
+    "read_only_alternatives": []
+}

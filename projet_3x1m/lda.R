@@ -1,0 +1,321 @@
+library(tidyverse)
+library(MASS)
+
+results <- read_csv("resultats/results_reshape.csv") %>% rename("f440_mean" = "440nm_mean", "f470_mean" = "470nm_mean", "f532_mean" = "532nm_mean")
+colnames(results)
+
+results_with_hplc <- filter(results, chla_qa != 'NA')
+
+results_chla <- results_with_hplc %>% dplyr::select(strain ,dilution, replicate, chla_conc_spectro, total_chlorophyll_a) %>% 
+  pivot_longer(4:5, names_to = 'chla', values_to = 'concentration') %>% filter(dilution %in% c('2', 'Cmere'))
+
+ggplot(results_chla)+
+  geom_bar(aes(x = replicate, y = concentration, fill = chla), stat = 'identity', position = 'dodge')+
+  facet_grid(dilution~strain, scale = 'free')
+
+ggplot(results_with_hplc)+
+  geom_point(aes(x = log(total_chlorophyll_a), y = log(chla_conc_spectro), colour = strain))+
+  geom_smooth(aes(x = log(total_chlorophyll_a), y = log(chla_conc_spectro)), method = 'lm', se = FALSE)+
+  ylab("Chla spectro")+
+  xlab("Chla HPLC")+
+  theme_bw()+
+  scale_color_brewer(name = "Souches", palette = "Paired")
+
+model <- lm(log(total_chlorophyll_a)~log(chla_conc_spectro), data = results_with_hplc)
+summary(model)
+
+result <- results_with_hplc %>% mutate(chl_content = total_chlorophyll_a/number_cells,
+                                       f440_content = f440_mean/number_cells,
+                                       f470_content = f470_mean/number_cells,
+                                       f532_content = f532_mean/number_cells,
+                                       f440_f470 = f440_mean/f470_mean,
+                                       f440_f532 = f440_mean/f532_mean,
+                                       f532_f440 = f532_mean/f440_mean,
+                                       f470_f440 = f470_mean/f440_mean,
+                                       f532_f470 = f532_mean/f470_mean,
+                                       f440_ratio = f440_mean/total_chlorophyll_a,
+                                       f470_ratio = f470_mean/total_chlorophyll_a,
+                                       f532_ratio = f532_mean/total_chlorophyll_a,
+                                       d470_d440 = f470_ratio/f440_ratio,
+                                       d532_d440 = f532_ratio/f440_ratio) 
+ggplot(result)+
+  geom_boxplot(aes(x = strain, y = log(chl_content)))
+
+ggplot(result)+
+  geom_point(aes(x = log(f440_content), y = log(chl_content)))
+
+ggplot(result)+
+  geom_point(aes(x = d532_d440, y = d470_d440, colour = strain))
+
+result <- result %>% mutate(common_name = case_when(
+  strain %in% c("RCC1717", "RCC76", "RCC4213") ~ "Diatom",
+  strain %in% c("RCC162", "RCC156", "PCC9511") ~ "Prochlorococcus",
+  strain %in% c("RCC2379", "RCC2374", "RCC2319") ~ "Synechococcus",
+  strain %in% c("RCC100") ~ "Pelagophyte",
+  strain %in% c("RCC3006") ~ "Dino"
+))
+
+ggplot(result)+
+  geom_point(aes(x = d532_d440, y = d470_d440, colour = common_name), size = 4)+
+  xlab("F532/F440")+
+  ylab("F470/F440")+
+  theme_bw(base_size = 18)+
+  scale_colour_brewer(palette = "Set1", name = "Groupe taxo")
+
+ggsave("projet_3x1m/output/ratio.png", width = 12, height = 8)
+
+
+xtrain <- dplyr::select(result, f470_f440, f532_f440, f532_f470)
+ytrain <- pull(result, common_name)
+DTrain <- result %>% filter(dilution != "Cmere") %>% dplyr::select(common_name, f470_f440, f532_f440, f532_f470)
+
+training.samples <- caret::createDataPartition(DTrain$common_name, p = 0.67, list = FALSE)
+train.data  <- DTrain[training.samples, ]
+test.data <- DTrain[-training.samples, ] %>% dplyr::select(-common_name)
+ytest <- DTrain[-training.samples, ] %>% pull(common_name)
+
+mlda <- lda(common_name ~ ., data = train.data)
+print(mlda)
+
+predTest <- predict(mlda,newdata=test.data)
+
+mc <- table(ytest, predTest$class)
+print(mc)
+
+ytest <- c()
+prediction <- c()
+for(i in c(1:10000)){
+  training.samples <- caret::createDataPartition(DTrain$common_name, p = 0.8, list = FALSE)
+  training.samples <- sample(nrow(DTrain), 31)
+  
+  train.data  <- DTrain[training.samples, ]
+  test.data <- DTrain[-training.samples, ] %>% dplyr::select(-common_name)
+  ytest <- c(ytest, DTrain[-training.samples,]$common_name)
+  
+  mlda <- lda(common_name ~ ., data = train.data)
+  
+  predTest <- predict(mlda, newdata=test.data)
+  
+  predicted <- as.character(predTest$class)
+
+  prediction <- c(prediction, predicted)
+    
+}
+
+mc <- table(ytest, prediction)
+print(mc)
+
+result_pred <- data.frame("real" = ytest, "predict" = prediction) %>% 
+  mutate("classification" = case_when(
+    real == predict ~ "ok",
+    real != predict ~ "nok"
+  )) %>% 
+  group_by(real, classification) %>% 
+  summarise(n = n()) %>% 
+  mutate(percent = n/sum(n) * 100)
+
+ggplot(result_pred)+
+  geom_bar(aes(x = real, y = percent, fill = classification), stat = "identity")+
+  theme_bw()+
+  scale_fill_brewer(palette = "Set1")
+
+
+# test on boussole data ---------------------------------------------------
+
+
+b229_desc2 <- read_csv("resultats/bouss_prof/b229_desc2.csv")
+b229_desc3 <- read_csv("resultats/bouss_prof/b229_desc3.csv")
+b227_desc2 <- read_csv("resultats/bouss_prof/b227_desc2.csv")
+
+
+b229 <- dplyr::select(b229_desc2, pres, fluo_440, fluo_470, fluo_532) %>% na.omit() %>% mutate(depth = round(pres)) %>% 
+  mutate(f470_f440 = fluo_470/fluo_440,
+         f532_f440 = fluo_532/fluo_440,
+         f532_f470 = fluo_532/fluo_470) %>% 
+  group_by(depth) %>% 
+  summarise_all(mean) %>% 
+  ungroup()
+b229_3 <- dplyr::select(b229_desc3, pres, fluo_440, fluo_470, fluo_532) %>% na.omit() %>% mutate(depth = round(pres)) %>% 
+  mutate(f470_f440 = fluo_470/fluo_440,
+         f532_f440 = fluo_532/fluo_440,
+         f532_f470 = fluo_532/fluo_470) %>% 
+  group_by(depth) %>% 
+  summarise_all(mean) %>% 
+  ungroup()
+
+b227 <- dplyr::select(b227_desc2, pres, fluo_440, fluo_470, fluo_532) %>% na.omit() %>% mutate(depth = round(pres)) %>% 
+  group_by(depth) %>% 
+  mutate(f470_f440 = fluo_470/fluo_440,
+             f532_f440 = fluo_532/fluo_440,
+             f532_f470 = fluo_532/fluo_470) %>% 
+  summarise_all(mean) %>% 
+  ungroup() %>% 
+  mutate(prof = "b227")
+
+
+b229_test <- b229 %>% 
+  dplyr::select(f470_f440, f532_f440, f532_f470)
+b229_3_test <- b229_3 %>% 
+  dplyr::select(f470_f440, f532_f440, f532_f470)
+
+
+test2 <- b227 %>% 
+  dplyr::select(f470_f440, f532_f440, f532_f470) 
+
+mlda <- lda(common_name~., data = DTrain)
+
+pred229 <- predict(mlda, newdata= b229_test)
+pred229_3 <- predict(mlda, newdata= b229_3_test)
+
+pred227 <- predict(mlda, newdata = test2)
+
+b229$taxa <- pred229$class
+b229_3$taxa <- pred229_3$class
+
+
+b227$taxa <- pred227$class
+b227_prob <- data.frame(pred227$posterior) %>% mutate(depth = b227$depth) %>% 
+  pivot_longer(1:5, names_to = "taxa", values_to = "probability") %>% 
+  group_by(depth) %>% 
+  summarise(m = max(probability)) %>% 
+  pull(m)
+b227$prob <- b227_prob
+
+b229_prob <- data.frame(pred229$posterior) %>% mutate(depth = b229$depth) %>% 
+  pivot_longer(1:5, names_to = "taxa", values_to = "probability") %>% 
+  group_by(depth) %>% 
+  summarise(m = max(probability)) %>% 
+  pull(m)
+b229$prob <- b229_prob
+
+b229_3_prob <- data.frame(pred229_3$posterior) %>% mutate(depth = b229_3$depth) %>% 
+  pivot_longer(1:5, names_to = "taxa", values_to = "probability") %>% 
+  group_by(depth) %>% 
+  summarise(m = max(probability)) %>% 
+  pull(m)
+b229_3$prob <- b229_3_prob
+
+ggplot(b229)+
+  geom_point(aes(x = fluo_470, y = - depth, colour = taxa), size = 4)+
+  ylim(-100,0)+
+  xlim(50,175)+
+  ggtitle("BOUSSOLE Avril")+
+  theme_bw(base_size = 18)
+
+ggsave("projet_3x1m/output/b229_lda.png", width = 8, height = 12)
+
+ggplot(b229_3)+
+  geom_point(aes(x = fluo_470, y = - depth, colour = taxa, size = prob))+
+  ylim(-200,0)+
+  xlim(0,200)
+
+
+ggplot(b227)+
+  geom_point(aes(x = fluo_470, y = - depth, colour = taxa), size = 4)+
+  ylim(-100,0)+
+  xlim(50,150)+
+  ggtitle("BOUSSOLE Février")+
+  theme_bw(base_size = 18)
+
+ggsave("projet_3x1m/output/b227_lda.png", width = 8, height = 12)
+ggplot(b227)+
+  geom_point(aes(x = f532_f440, y = f470_f440, colour = taxa))
+
+ggplot(b229)+
+  geom_point(aes(x = f532_f440, y = f470_f440, colour = taxa, size = prob))
+ggplot(b229_3)+
+  geom_point(aes(x = f532_f440, y = f470_f440, colour = taxa, size = prob))
+
+
+# open hplc data ----------------------------------------------------------
+library(readxl)
+
+hplc <- read_excel("resultats/hplc_phytofloat.xlsx") %>% janitor::clean_names() 
+
+
+
+ctd_path <- "~/Documents/these/mf/Boussole/Output/Data/"
+bouss_id <- dplyr::select(hplc, station, ctd) %>% filter(station != "B218" & station != "B222" & station != "B224" & station != "B226") 
+
+data_final <- data.frame("station" = character(),
+                         "ctd" = numeric(),
+                         "pres" = numeric(),
+                         "fluo_440" = numeric(),
+                         "fluo_470" = numeric(),
+                         "fluo_532" = numeric())
+
+for(i in unique(bouss_id$station)){
+  t <- filter(bouss_id, station == i)
+  for(j in unique(t$ctd)){
+    path_to_open <- paste(ctd_path, tolower(i), "/", tolower(i), "_desc", j, ".csv", sep = "")
+    if(i == "Rade_Villefranche"){
+      path_to_open <- "~/Documents/these/mf/Boussole/Output/Data/brade/brade_asc1.csv"
+    }
+    if(i == "B225"){
+      path_to_open <- "~/Documents/these/mf/Boussole/Output/Data/b225/b225_desc1.csv"
+    }
+    data <- read_csv(path_to_open) %>% mutate("station" = i,
+                                              "ctd" = j) %>% 
+      dplyr::select(station, ctd, pres, fluo_440, fluo_470, fluo_532) %>% na.omit()
+    data_final <- bind_rows(data_final, data)
+  }
+}
+
+unique(data_final$station)
+
+hplc_format <- hplc %>% dplyr::select(station, ctd, date_echantillonnage, profondeur_m, peridinin, x19_butanoyloxyfucoxanthin, fucoxanthin, violaxanthin, x19_hexanoyloxyfucoxanthin, diadinoxanthin, alloxanthin, zeaxanthin, t_chlb, chlorophyll_a, total_chlorophyll_a) %>% 
+  rename('depth' = profondeur_m,
+         'peri' = peridinin,
+         'zea' = zeaxanthin,
+         'fuco' = fucoxanthin,
+         'but' = x19_butanoyloxyfucoxanthin,
+         'hex' = x19_hexanoyloxyfucoxanthin,
+         'viola' = violaxanthin,
+         'diad' = diadinoxanthin,
+         'tchlb' = t_chlb,
+         'allo' = alloxanthin,
+         "chla" = chlorophyll_a,
+         "tchla" = total_chlorophyll_a) 
+
+data_fluo <- data_final %>% mutate(depth = plyr::round_any(pres,5)) %>% dplyr::select(-pres) %>% filter(station != "Rade_Villefranche") %>% 
+  group_by(station, ctd, depth) %>% 
+  summarise_all(mean) %>% 
+  ungroup()%>% 
+  mutate(f470_f440 = fluo_470/fluo_440,
+         f532_f440 = fluo_532/fluo_440,
+         f532_f470 = fluo_532/fluo_470)
+
+
+pred_all <- predict(mlda, newdata = dplyr::select(data_fluo, f470_f440:f532_f470))
+
+data_fluo$taxa <- pred_all$class
+
+data_merged <- inner_join(hplc_format, data_fluo) 
+
+ggplot(data_fluo)+
+  geom_point(aes(x = (fluo_470 - 50) * 0.007, y = - depth, colour = taxa))+
+  geom_point(aes(x = (fluo_470 - 50) * 0.007, y = - depth), shape = 1, size = 3, colour = "red", data = data_merged)+
+  facet_wrap(.~ station, scale = "free_x")+
+  ylim(-200, 0)+
+  xlab("Chla concentration")
+
+data_merged <- dplyr::select(data_merged, -date_echantillonnage)
+data_merged[data_merged == "LOD"] <-"0"
+
+
+hplc_plot <- data_merged %>%
+  filter(station != "B227") %>% 
+  mutate_if(is.character,as.numeric) %>% 
+  group_by(taxa) %>% 
+  dplyr::select(taxa, peri:tchla) %>% 
+  summarise_all(mean) %>% 
+  ungroup() %>% 
+  pivot_longer(2:10, names_to = "pigment", values_to = "concentration") %>% 
+  mutate(concentration = concentration/chla)
+
+ggplot(hplc_plot)+
+  geom_bar(aes(x = pigment, y = concentration, fill = pigment), stat = "identity")+
+  coord_polar()+
+  facet_wrap(.~taxa)
+
+

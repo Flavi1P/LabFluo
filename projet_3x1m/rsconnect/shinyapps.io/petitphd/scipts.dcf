@@ -1,0 +1,10 @@
+name: scipts
+title:
+username:
+account: petitphd
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 3136146
+bundleId: 3805196
+url: https://petitphd.shinyapps.io/scipts/
+when: 1604178943.91958

@@ -1,0 +1,9 @@
+melange,x_strain,y_strain
+melange_1,RCC3006,RCC1717
+melange_2,RCC1717,RCC3006
+melange_3,PCC9511,RCC2319
+melange_4,RCC2319,PCC9511
+melange_5,RCC1717,PCC9511
+melange_6,RCC9511,RCC1717
+melange_7,RCC1717,RCC2319
+melange_8,RCC2319,RCC1717

@@ -1,0 +1,54 @@
+library(tidyverse)
+
+data <- read_csv('projet_3x1m/dashboard/mix_data.csv')
+
+
+data_summary <- data %>% filter(file != 'NA') %>%  pivot_longer(e440:e532, names_to = 'wavelength', values_to = 'DC') %>% 
+  group_by(melange_full, melange, file, wavelength, x_strain, y_strain, souche_ajoutee, concentration_vrai) %>% summarise_at(vars(DC), mean)
+
+white_value <- data_summary %>% filter(file == 'blanc') %>% ungroup() %>%  select(wavelength, 'DC_white' = DC) %>% distinct()
+
+data_summary <- left_join(data_summary, white_value) %>% mutate(DC = DC - DC_white)
+  
+
+ggplot(data_summary)+
+  geom_line(aes(x = concentration_vrai, y = DC, colour = wavelength, group = wavelength))+
+  geom_point(aes(x = concentration_vrai, y = DC, colour = wavelength))+
+  facet_wrap(.~melange, scale = 'free_y')
+
+derivation <- na.omit(tibble('melange' = NA, 'wavelength' = NA, 'deriv_a' = NA, 'deriv_b' = NA, 'deriv_c' = NA, 'deriv_bc' = NA))
+
+for(i in unique(data_summary$melange)){
+  t <- filter(data_summary, melange == i)
+  deriv_a <- t$concentration_vrai[t$file == 'melange_a'] / t$DC[t$file == 'melange_a']
+  deriv_b <- (t$concentration_vrai[t$file == 'melange_b'] - t$concentration_vrai[t$file == 'melange_a']) / (t$DC[t$file == 'melange_b'] - t$DC[t$file == 'melange_a'])
+  deriv_c <- (t$concentration_vrai[t$file == 'melange_c'] - t$concentration_vrai[t$file == 'melange_b']) / (t$DC[t$file == 'melange_c'] - t$DC[t$file == 'melange_b'])
+  deriv_bc <- (t$concentration_vrai[t$file == 'melange_c'] - t$concentration_vrai[t$file == 'melange_a']) / (t$DC[t$file == 'melange_c'] - t$DC[t$file == 'melange_a'])
+  
+  
+  deriv_data <- tibble('melange' = i, 'wavelength' = c('e440', 'e470', 'e532'), 'deriv_a' = deriv_a, 'deriv_b' = deriv_b, 'deriv_c' = deriv_c, 'deriv_bc' = deriv_bc) 
+  
+  derivation <- bind_rows(derivation, deriv_data)
+  }
+
+data_with_deriv <- left_join(data_summary, derivation)
+
+data_large <- data_with_deriv %>% ungroup %>% select(- DC, - DC_white) %>% 
+  pivot_longer(deriv_a:deriv_bc, names_to = 'derivativ', values_to = 'slope') %>% 
+  pivot_wider(names_from = 'wavelength', values_from = 'slope') %>% 
+  mutate(y_ratio = e470/e440,
+         x_ratio = e532/e440)
+
+ggplot(filter(data_large, derivativ %in% c('deriv_b', 'deriv_c', 'deriv_bc') & souche_ajoutee != 'NA'))+
+  geom_point(aes(x = x_ratio, y = y_ratio, colour = souche_ajoutee), size = 2)+
+  theme_minimal()+
+  xlab('slope_532/slope_440')+
+  ylab('slope_470/slope_440')
+
+ggplot(filter(data_large, derivativ %in% c('deriv_b', 'deriv_c') & souche_ajoutee != 'NA'))+
+  geom_density(aes(x = x_ratio, colour = souche_ajoutee), size = 1)+
+  theme_minimal()
+
+ggplot(filter(data_large, derivativ %in% c('deriv_b', 'deriv_c', 'deriv_bc') & souche_ajoutee != 'NA'))+
+  geom_density(aes(x = y_ratio, colour = souche_ajoutee), size = 1)+
+  theme_minimal()

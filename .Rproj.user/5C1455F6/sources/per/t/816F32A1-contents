@@ -1,0 +1,197 @@
+---
+title: "Projet 3X1M"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    favicon: dashboard/logo3.png
+    source_code: embed
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(lubridate)
+library(shiny)
+library(plotly)
+
+```
+
+```{r global, include=FALSE}
+# load data in 'global' chunk so it can be shared by all users of the dashboard
+dat <- read_csv('dashboard/data_plot.csv')
+dat_rep <- read_csv('dashboard/data_rep.csv')
+dat_rep$file <- gsub('.txt', '', dat_rep$file)
+dat_rep$file <- gsub('\\.', '', dat_rep$file)
+
+dat_ts <- read_csv('dashboard/time_series.csv') %>% na.omit()
+dat_ts$file <- gsub('.txt', '', dat_ts$file)
+
+dat$file <- substr(dat$file, 10, 11)
+dat$strain <- toupper(gsub('.csv', '', dat$strain))
+
+reg <- read_csv('dashboard/lm.csv')
+
+taxa <- read_csv('dashboard/taxa_df.csv')
+
+```
+
+Barplot
+=====================================   
+
+Inputs {.sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+checkboxInput('axis', 'Same Y axis', value = TRUE)
+
+selectInput("strain",
+        label = "Select strain :",
+        choices = dat_rep %>% .$strain %>% unique %>% sort,
+        selected = 'rcc1717')
+
+selectInput("dilution",
+        label = "Select a dilution :",
+        choices = dat_ts %>% .$file %>% unique %>% sort,
+        selected = 'dilution_1')
+
+
+```
+
+This page shows the raw results of experimentation on the 3X1M fluorometer, conducted in the Station Biologique de Roscoff. <br>
+<br>
+The first panel shows the counts by excitation wavelength (colour) for the different concentrations of the differents culture.<br>
+The Second panel shows the differents results for the biological replicates of a same strain. <br>
+The third panel shows the raw counts for the three minutes minutes of measurement (each separate by two minutes of dark adaptation).
+
+Column {data-width=550}
+-----------------------------------------------------------------------
+
+### strain comparison
+
+```{r}
+
+dat <- filter(dat, strain != 'rcc100' & file != '0.')
+renderPlot({p <- ggplot(dat)+
+  geom_bar(aes(x = file, y = fn1, fill = wavelength), position = position_dodge(), stat = 'identity')+
+  geom_errorbar(aes(x = file, ymin = fn1 - fn2, ymax = fn1 + fn2, group = wavelength), position = position_dodge())+
+  scale_fill_brewer(palette = 'Set2', labels = c('440 nm', '470 nm', '532 nm'), name = 'excitation\nwavelength')+
+  ylab('Digital Counts')+
+  theme_minimal()+
+  theme(legend.position = c(0.7,0.1))
+
+if(input$axis){
+  p <- p + facet_wrap(.~strain, scales = 'free_x')
+}
+else{
+  p <- p + facet_wrap(.~strain, scales = 'free')
+}
+print(p)})
+
+
+```
+
+Column {data-width=450}
+-----------------------------------------------------------------------
+### Replicate check
+
+```{r}
+
+selected_dat <- reactive({dat_rep[dat_rep$strain %in% input$strain,]})
+renderPlot({ggplot(selected_dat())+
+  geom_bar(aes(x = file, y = fn1, fill = wavelength), position = position_dodge(), stat = 'identity')+
+  geom_errorbar(aes(x = file, ymin = fn1 - fn2, ymax = fn1 + fn2, group = wavelength), position = position_dodge())+
+  scale_fill_brewer(palette = 'Set2')+
+  ylab('Digital counts')+
+  facet_wrap(.~replicat, scale = 'free_x')+
+  guides(fill = FALSE)+
+  xlab('Number of the dilution')+
+  theme_minimal()}, height = 300)
+
+```
+
+### cinetic
+
+```{r}
+selected_ts <- reactive({dat_ts[dat_ts$strain %in% input$strain & dat_ts$file == input$dilution,]})
+
+renderPlot({ggplot(selected_ts())+
+  geom_path(aes(x = second, y = dc, colour = wavelength), size = 1)+
+  facet_wrap(.~ replicate+ replicat_bio, scale = 'free_x')+
+  theme_minimal()+
+  guides(color = FALSE)+
+  scale_color_brewer(palette = 'Set2')  
+}, height = 280 )
+
+```
+
+
+Slope factor
+=====================================
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+We plotted here the scatterplot of digital count values minus the white value (measure in the culture medium).<br>
+The value of the slope factor is indicate directly on the plot.
+
+```{r}
+selectInput('strain_reg', 'Strain selection', unique(reg$strain), selected = 'RCC4213')
+
+sliderInput("chl_adjust", label = "Chlorophyll a range",
+            min = 0, max = 30, value = 6, step = 1)
+```
+
+Column
+-----------------------------------------------------------------------
+
+
+### Linear regression
+```{r}
+
+selected_reg <- reactive({reg[reg$strain %in% input$strain_reg & reg$chl_real < input$chl_adjust,]})
+
+renderPlot({ggplot(selected_reg())+
+  geom_smooth(aes(x = chl_real, y = dc_zero, colour = wavelength), method = 'lm', se = TRUE)+
+  geom_point(aes(x = chl_real, y = dc_zero, fill = wavelength), shape = 21)+
+  geom_text(aes(x = 0.25, y =  y_pos, label = coeff, colour = wavelength), hjust = 0.5, position = ggstance::position_dodgev(60),size = 4)+
+  scale_x_reverse()+
+  scale_color_brewer(palette = 'Set2')+
+  scale_fill_brewer(palette = 'Set2', labels = c('440 nm', '470 nm', '532 nm'), name = 'excitation\nwavelength')+
+  guides(colour = FALSE)+
+  ylab('dc - white')+
+  xlab('Chlorophyll a concentration (µg/L)')+
+  facet_wrap(~replicat_bio, scales = 'free')+
+  theme_minimal()
+  })
+```
+
+
+Taxa discrimination
+=====================================
+
+Column {data-width=950}
+-----------------------------------------------------------------------
+
+### Slope ratios
+
+```{r}
+ggplotly(ggplot(taxa)+
+  geom_point(aes(x = d532_d440, y = d470_d440, colour = strain, shape = taxa) , size = 4)+
+  ylab('slope_470/slope_440')+
+  xlab('slope_532/slope_440')+
+  scale_x_continuous(trans = 'log')+
+  scale_color_manual(values = c('#ae017e',
+                                '#fd8d3c',
+                                '#f768a1',
+                                '#c2e699',
+                                '#a1dab4',
+                                '#41b6c4',
+                                '#225ea8',
+                                '#969696',
+                                '#78c679',
+                                '#238443'))+
+    theme_minimal())
+```
+

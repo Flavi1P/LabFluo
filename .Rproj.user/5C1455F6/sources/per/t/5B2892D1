@@ -1,0 +1,25 @@
+{
+    "id": "5B2892D1",
+    "path": "~/these/efficacy/labo_roscoff/projet_3x1m/regression.R",
+    "project_path": "projet_3x1m/regression.R",
+    "type": "r_source",
+    "hash": "305604880",
+    "contents": "",
+    "dirty": false,
+    "created": 1605179402253.0,
+    "source_on_save": false,
+    "relative_order": 5,
+    "properties": {
+        "cursorPosition": "51,44",
+        "scrollLine": "0",
+        "Source": "Source"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1607969410,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1607969410758,
+    "read_only": false,
+    "read_only_alternatives": []
+}
