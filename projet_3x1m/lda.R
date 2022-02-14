@@ -69,6 +69,14 @@ xtrain <- dplyr::select(result, f470_f440, f532_f440, f532_f470)
 ytrain <- pull(result, common_name)
 DTrain <- result %>% filter(dilution != "Cmere") %>% dplyr::select(common_name, f470_f440, f532_f440, f532_f470)
 
+train_for_mix <- DTrain %>% filter(common_name != "Pelagophyte")
+mlda <- lda(common_name ~ ., data = train_for_mix)
+print(mlda)
+
+#save the model
+
+saveRDS(mlda, "projet_3x1m/output/lda_model.rds")
+
 training.samples <- caret::createDataPartition(DTrain$common_name, p = 0.67, list = FALSE)
 train.data  <- DTrain[training.samples, ]
 test.data <- DTrain[-training.samples, ] %>% dplyr::select(-common_name)
@@ -118,6 +126,8 @@ ggplot(result_pred)+
   geom_bar(aes(x = real, y = percent, fill = classification), stat = "identity")+
   theme_bw()+
   scale_fill_brewer(palette = "Set1")
+
+
 
 
 # test on boussole data ---------------------------------------------------
