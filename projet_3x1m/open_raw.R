@@ -4,7 +4,7 @@ library(patchwork)
 
 for( i in (list.files(paste('resultats/3x1m/', strain, '/' , replicat, sep = '')))){
   
-  echo_3x1m <- read_table2("resultats/3x1m/rcc2319/a/dilution_3b.txt", 
+  echo_3x1m <- read_table2("resultats/3x1m/melange_1/melange_b.txt", 
                            col_names = FALSE)
   
   echo_3x1m <- select(echo_3x1m, -X3, -X4, -X5, -X7, -X9)

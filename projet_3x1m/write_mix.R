@@ -1,12 +1,13 @@
 library(tidyverse)
 library(lubridate)
 library(readxl)
+library(dplyr)
 
 
 strain_mix <- read_csv('projet_3x1m/dashboard/strain_mix.csv')
 mix_info <- read_excel("resultats/results_october_3x1m.xlsx", 
-                       sheet = "Melanges") %>% janitor::clean_names() %>% select(melange:concentration_vrai) %>% na.omit()
-mix_files <- list.files('Resultats/3x1m', full.names = TRUE)
+                       sheet = "Melanges") %>% janitor::clean_names() %>% dplyr::select(melange:concentration_vrai) %>% na.omit()
+mix_files <- list.files('resultats/3x1m', full.names = TRUE)
 mix_files <- mix_files[grep('melange', mix_files)]
 
 
@@ -20,9 +21,9 @@ for(i in mix_files){
   subfiles <- list.files(i, full.names = TRUE)
   for(j in subfiles){
     
-    echo_3x1m <- read_table2(j, col_names = FALSE)
+    echo_3x1m <- read_table(j, col_names = FALSE)
     
-    echo_3x1m <- select(echo_3x1m, -X3, -X4, -X5, -X7, -X9)
+    echo_3x1m <- dplyr::select(echo_3x1m, -X3, -X4, -X5, -X7, -X9)
     
     
     names(echo_3x1m) <- c('date', 'time', 'e440', 'e470', 'e532', 'jsp')
@@ -50,7 +51,7 @@ for(i in mix_files){
 data <- left_join(dat_final, strain_mix)
 
 data$melange_full <- paste(data$melange, gsub('.*_', '', data$file), sep = '')
-mix_info %<>% rename('melange_full' = melange)
+mix_info <- mix_info %>% rename('melange_full' = melange)
 
 data_full <- left_join(data, mix_info)
 data_full$concentration_vrai[data_full$file == 'blanc'] <- 0
